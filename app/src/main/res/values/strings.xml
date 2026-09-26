@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="widget_label">Einundzwanzig Bitcoin</string>
+    <string name="widget_description">Block height, fees, Moscow Time, price, supply, hashrate and difficulty</string>
+</resources>

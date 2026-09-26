@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Same palette as the iOS widget -->
+    <color name="bg">#151515</color>
+    <color name="accent">#F7931A</color>
+    <color name="label">#FFFFFF</color>
+    <color name="dim">#888888</color>
+    <color name="error">#555555</color>
+    <color name="divider">#2A2A2A</color>
+</resources>

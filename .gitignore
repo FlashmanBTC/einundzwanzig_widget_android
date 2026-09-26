@@ -1,0 +1,12 @@
+.gradle/
+build/
+local.properties
+.idea/
+*.iml
+.DS_Store
+captures/
+.kotlin/
+# Release keys never go into the repo (the debug.keystore is intentionally public)
+*.jks
+release.keystore
+keystore.properties
