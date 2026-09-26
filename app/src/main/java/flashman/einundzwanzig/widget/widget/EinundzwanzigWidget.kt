@@ -58,14 +58,18 @@ val C_DIM = Color(0xFF888888)
 val C_ERROR = Color(0xFF555555)
 val C_DIVIDER = Color(0xFF2A2A2A)
 
-// Layout buckets: Glance picks the largest one that fits the size the user dragged the widget to
-private val SMALL = DpSize(110.dp, 110.dp)   // ~2x2: block height only
-private val WIDE = DpSize(250.dp, 110.dp)    // ~4x2: block height + fees, Moscow Time, price
-private val LARGE = DpSize(250.dp, 250.dp)   // ~4x4: everything, like the iOS mono theme
+// Layout by the widget's real size (launchers report very different sizes for the same grid):
+// wide and flat -> block height left, rows right; otherwise stacked, with as many rows as fit
+private val WIDE_MIN_WIDTH = 230.dp
+private val WIDE_MAX_HEIGHT = 170.dp
+private val PADDING = 12.dp
+private val HEADER_HEIGHT = 34.dp      // logo + status line
+private val BLOCK_HEIGHT = 62.dp       // "BLOCK" label + big value + spacing
+private val ROW_HEIGHT = 28.dp         // divider + row with padding
 
 class EinundzwanzigWidget : GlanceAppWidget() {
 
-    override val sizeMode = SizeMode.Responsive(setOf(SMALL, WIDE, LARGE))
+    override val sizeMode = SizeMode.Exact
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         // Observe the store: a Glance session outlives a single update, so reading the
@@ -84,14 +88,14 @@ class EinundzwanzigWidget : GlanceAppWidget() {
             modifier = GlanceModifier
                 .fillMaxSize()
                 .background(C_BG)
-                .padding(horizontal = 14.dp, vertical = 12.dp)
+                .padding(PADDING)
                 .clickable(actionRunCallback<RefreshAction>()),
         ) {
+            val inner = DpSize(size.width - PADDING * 2, size.height - PADDING * 2)
             when {
                 s == null -> Loading()
-                size.height >= LARGE.height && size.width >= LARGE.width -> Large(s)
-                size.width >= WIDE.width -> Wide(s)
-                else -> Small(s)
+                inner.width >= WIDE_MIN_WIDTH && inner.height < WIDE_MAX_HEIGHT -> Wide(s, rowsFitting(inner.height, stacked = false))
+                else -> Stacked(s, rowsFitting(inner.height, stacked = true))
             }
         }
     }
@@ -109,21 +113,38 @@ class EinundzwanzigWidget : GlanceAppWidget() {
         }
     }
 
-    // ~2x2: logo, status, block height
+    /** Rows below the block height, in this order, as far as they fit. */
+    private fun rows(s: Snapshot) = listOf(
+        "FEES  L·M·H" to s.fees,
+        "MOSCOW" to s.moscow,
+        "${s.currency}/BTC" to s.price,
+        "SUPPLY" to s.supply,
+        "HASHRATE" to s.hashrate,
+        "DIFFICULTY" to s.difficulty,
+    )
+
+    private fun rowsFitting(height: androidx.compose.ui.unit.Dp, stacked: Boolean): Int {
+        val free = if (stacked) height - HEADER_HEIGHT - BLOCK_HEIGHT else height
+        return (free / ROW_HEIGHT).toInt().coerceIn(0, 6)
+    }
+
+    // Stacked (the iOS mono theme): logo, status, big block height, then as many rows as fit
     @Composable
-    private fun Small(s: Snapshot) {
+    private fun Stacked(s: Snapshot, rowCount: Int) {
         Column(modifier = GlanceModifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
             Logo()
-            Status(s, 9.sp)
+            Spacer(GlanceModifier.height(3.dp))
+            Status(s, 10.sp)
             Spacer(GlanceModifier.defaultWeight())
-            Block(s.height, 28.sp)
+            Block(s.height, if (rowCount == 0) 30.sp else 38.sp)
             Spacer(GlanceModifier.defaultWeight())
+            rows(s).take(rowCount).forEach { (label, item) -> DataRow(label, item, 16.sp) }
         }
     }
 
-    // ~4x2: logo + block height on the left, three rows on the right
+    // Wide and flat: logo + block height on the left, rows on the right
     @Composable
-    private fun Wide(s: Snapshot) {
+    private fun Wide(s: Snapshot, rowCount: Int) {
         Row(modifier = GlanceModifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
             Column(
                 modifier = GlanceModifier.defaultWeight().fillMaxHeight(),
@@ -137,29 +158,10 @@ class EinundzwanzigWidget : GlanceAppWidget() {
             }
             Spacer(GlanceModifier.width(14.dp))
             Column(modifier = GlanceModifier.defaultWeight(), verticalAlignment = Alignment.CenterVertically) {
-                DataRow("FEES  L·M·H", s.fees, 15.sp, divider = false)
-                DataRow("MOSCOW", s.moscow, 15.sp)
-                DataRow("${s.currency}/BTC", s.price, 15.sp)
+                rows(s).take(rowCount.coerceAtLeast(1)).forEachIndexed { i, (label, item) ->
+                    DataRow(label, item, 15.sp, divider = i > 0)
+                }
             }
-        }
-    }
-
-    // ~4x4: the iOS mono theme - logo, status, big block height, then label/value rows
-    @Composable
-    private fun Large(s: Snapshot) {
-        Column(modifier = GlanceModifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
-            Logo()
-            Spacer(GlanceModifier.height(3.dp))
-            Status(s, 10.sp)
-            Spacer(GlanceModifier.defaultWeight())
-            Block(s.height, 40.sp)
-            Spacer(GlanceModifier.height(8.dp))
-            DataRow("FEES  L·M·H", s.fees, 16.sp)
-            DataRow("MOSCOW", s.moscow, 16.sp)
-            DataRow("${s.currency}/BTC", s.price, 16.sp)
-            DataRow("SUPPLY", s.supply, 16.sp)
-            DataRow("HASHRATE", s.hashrate, 16.sp)
-            DataRow("DIFFICULTY", s.difficulty, 16.sp)
         }
     }
 
