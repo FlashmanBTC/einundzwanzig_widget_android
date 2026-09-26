@@ -13,8 +13,8 @@ android {
         applicationId = "flashman.einundzwanzig.widget"
         minSdk = 26
         targetSdk = 36
-        versionCode = 7
-        versionName = "0.4.1"
+        versionCode = 10
+        versionName = "1.0.0"
     }
 
     signingConfigs {
@@ -25,6 +25,16 @@ android {
             storePassword = "android"
             keyAlias = "androiddebugkey"
             keyPassword = "android"
+        }
+        // Release key comes from the environment (GitHub secrets in CI); it is never in the repo.
+        // Without it, release builds stay unsigned.
+        System.getenv("RELEASE_STORE_FILE")?.let { path ->
+            create("release") {
+                storeFile = file(path)
+                storePassword = System.getenv("RELEASE_STORE_PASSWORD")
+                keyAlias = System.getenv("RELEASE_KEY_ALIAS") ?: "einundzwanzig"
+                keyPassword = System.getenv("RELEASE_STORE_PASSWORD")
+            }
         }
     }
 
@@ -39,6 +49,7 @@ android {
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             resValue("string", "app_name", "Einundzwanzig Widget")
+            signingConfigs.findByName("release")?.let { signingConfig = it }
         }
     }
 
