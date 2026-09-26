@@ -25,14 +25,18 @@ class ParsersTest {
 
     private val mempoolPrices = """{"time":1790301218,"USD":84554,"EUR":74379,"CHF":69850,"JPY":13425330}"""
 
-    @Test fun `price from mempool`() = assertEquals(74379.0, Parsers.price(mempoolPrices, "EUR")!!, 0.0)
-    @Test fun `price from blockchain info`() = assertEquals(
-        73813.5, Parsers.price("""{"EUR":{"15m":73813.5,"last":73813.5,"symbol":"€"}}""", "EUR")!!, 0.0,
+    @Test fun `prices from mempool`() = assertEquals(
+        mapOf("EUR" to 74379.0, "USD" to 84554.0, "CHF" to 69850.0, "JPY" to 13425330.0),
+        Parsers.prices(mempoolPrices),
     )
-    @Test fun `price rejects missing currency`() = assertNull(Parsers.price(mempoolPrices, "GBP"))
-    @Test fun `price accepts fresh mempool data`() = assertEquals(74379.0, Parsers.price(mempoolPrices, "EUR", 1790301218 + 600)!!, 0.0)
+    @Test fun `prices from blockchain info`() = assertEquals(
+        mapOf("EUR" to 73813.5, "USD" to 84000.0),
+        Parsers.prices("""{"EUR":{"15m":73813.5,"last":73813.5,"symbol":"€"},"USD":{"last":84000},"XYZ":{"last":1}}"""),
+    )
+    @Test fun `prices without a supported currency`() = assertNull(Parsers.prices("""{"XYZ":1}"""))
+    @Test fun `prices accept fresh mempool data`() = assertEquals(74379.0, Parsers.prices(mempoolPrices, 1790301218 + 600)!!["EUR"]!!, 0.0)
     // The syncing node on 2026-09-26 served a 30 h old price with HTTP 200
-    @Test fun `price rejects stale mempool data`() = assertNull(Parsers.price(mempoolPrices, "EUR", 1790301218 + 30 * 3600))
+    @Test fun `prices reject stale mempool data`() = assertNull(Parsers.prices(mempoolPrices, 1790301218 + 30 * 3600))
 
     @Test fun `hashrate takes the latest entry`() = assertEquals(
         8.8e20, Parsers.hashrate("""{"hashrates":[{"timestamp":1,"avgHashrate":8.1e20},{"timestamp":2,"avgHashrate":8.8e20}]}""")!!, 0.0,

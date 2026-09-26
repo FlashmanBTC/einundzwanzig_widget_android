@@ -13,6 +13,7 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import flashman.einundzwanzig.widget.data.Repository
+import flashman.einundzwanzig.widget.update.UpdateChecker
 import flashman.einundzwanzig.widget.widget.EinundzwanzigWidget
 import java.util.concurrent.TimeUnit
 
@@ -23,6 +24,8 @@ class RefreshWorker(context: Context, params: WorkerParameters) : CoroutineWorke
         val ok = runCatching { Repository.refresh(applicationContext) }
             .onFailure { Log.e(TAG, "refresh failed", it) }
             .isSuccess
+        runCatching { UpdateChecker.checkIfDue(applicationContext) }
+            .onFailure { Log.e(TAG, "update check failed", it) }
         EinundzwanzigWidget().updateAll(applicationContext)
         return if (ok) Result.success() else Result.retry()
     }
