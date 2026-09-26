@@ -1,7 +1,9 @@
 name: Build
 
 on:
+  # Branches are built through their pull request; pushing to main builds main
   push:
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
