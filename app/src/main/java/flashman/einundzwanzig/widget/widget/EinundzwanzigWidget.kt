@@ -77,6 +77,13 @@ private val WIDE_MIN_WIDTH = 230.dp
 private val WIDE_MAX_HEIGHT = 150.dp
 private val PADDING = 12.dp
 
+// Measured on a real device (Pixel launcher, 2026-09-26), rounded up: used only to decide whether
+// all mono rows fit without scrolling. If they do, the rows sit at the bottom like on iOS.
+private val MONO_HEADER = 38.dp   // logo + status line
+private val MONO_BLOCK = 70.dp    // "BLOCK" label + big value + spacing
+private val MONO_ROW = 36.dp      // divider + row
+private val UPDATE_LINE = 14.dp
+
 /** Everything one widget needs to draw itself. */
 private class ViewState(val display: Display?, val config: WidgetConfig, val update: String?, val debug: Boolean)
 
@@ -127,7 +134,7 @@ class EinundzwanzigWidget : GlanceAppWidget() {
             when {
                 wide -> Wide(d, cfg, update, sizeInfo)
                 cfg.theme == Theme.CLASSIC -> Classic(d, cfg, update, sizeInfo)
-                else -> Mono(d, cfg, update, sizeInfo)
+                else -> Mono(d, cfg, update, sizeInfo, monoFits(cfg, size.height - PADDING * 2, update != null))
             }
         }
     }
@@ -145,9 +152,31 @@ class EinundzwanzigWidget : GlanceAppWidget() {
         }
     }
 
-    // Mono (like the iOS mono theme): logo, status, big block height, then label/value rows
+    private fun monoFits(cfg: WidgetConfig, height: androidx.compose.ui.unit.Dp, updateLine: Boolean): Boolean {
+        val needed = MONO_HEADER + (if (updateLine) UPDATE_LINE else 0.dp) +
+            (if (cfg.showBlock) MONO_BLOCK else 0.dp) + MONO_ROW * cfg.rows.size
+        return needed <= height
+    }
+
+    // Mono (like the iOS mono theme): logo, status, big block height, then label/value rows.
+    // If all rows fit, they sit at the bottom and the block height is centred in the free space;
+    // otherwise the rows become a scrollable list.
     @Composable
-    private fun Mono(d: Display, cfg: WidgetConfig, update: String?, sizeInfo: String) {
+    private fun Mono(d: Display, cfg: WidgetConfig, update: String?, sizeInfo: String, fits: Boolean) {
+        if (fits) {
+            Column(modifier = GlanceModifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
+                Header(d, cfg.rows, update, 10.sp, sizeInfo)
+                Spacer(GlanceModifier.defaultWeight())
+                if (cfg.showBlock) {
+                    BlockValue(d.block, "BLOCK", 38.sp, 9.sp)
+                    Spacer(GlanceModifier.defaultWeight())
+                }
+                cfg.rows.forEachIndexed { i, key ->
+                    MonoRow(d.label(key, Theme.MONO), d.row(key), 16.sp, divider = cfg.showBlock || i > 0)
+                }
+            }
+            return
+        }
         Column(modifier = GlanceModifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
             Header(d, cfg.rows, update, 10.sp, sizeInfo)
             if (cfg.showBlock) {
