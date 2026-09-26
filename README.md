@@ -32,6 +32,8 @@ Obtainium checks for new releases and updates the app for you.
 1. Download the latest `einundzwanzig-widget-v*.apk` from [Releases](../../releases/latest)
 2. Open it and allow installing apps from your browser or file manager when asked
 
+> The first installation can take a while or show a Google Play Protect warning, because Google does not know this developer yet. Choose **More details → Install anyway**. Updates install normally afterwards.
+
 ### Add the widget
 
 Long-press your home screen → **Widgets** → **Einundzwanzig Bitcoin** → drag it to the home screen. The settings screen opens; choose your values and tap **Save**.
