@@ -22,6 +22,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -33,6 +34,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -103,64 +105,67 @@ private fun ConfigScreen(initial: WidgetConfig, onSave: (WidgetConfig) -> Unit) 
     var theme by remember { mutableStateOf(initial.theme) }
     val scope = rememberCoroutineScope()
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(BG)
-            .safeDrawingPadding()
-            .verticalScroll(rememberScrollState())
-            .padding(20.dp),
-    ) {
-        Text("Widget settings", color = ACCENT, fontSize = 24.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(20.dp))
+    val save: () -> Unit = {
+        scope.launch { onSave(WidgetConfig(showBlock, order.filter { it in enabled }, currency, highToLow, theme)) }
+    }
 
-        Section("Theme")
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Theme.entries.forEach { t ->
-                FilterChip(selected = theme == t, onClick = { theme = t }, label = { Text(t.name.lowercase().replaceFirstChar(Char::uppercase)) })
-            }
+    Column(modifier = Modifier.fillMaxSize().background(BG).safeDrawingPadding()) {
+        // Title and Save stay at the top while the settings scroll below
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth().padding(start = 20.dp, end = 12.dp, top = 12.dp, bottom = 8.dp),
+        ) {
+            Text("Widget settings", color = ACCENT, fontSize = 24.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+            Button(onClick = save) { Text("Save", fontWeight = FontWeight.Bold) }
         }
+        HorizontalDivider(color = DIVIDER)
 
-        Section("Block height")
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Show block height", color = TEXT, modifier = Modifier.weight(1f))
-            Switch(checked = showBlock, onCheckedChange = { showBlock = it })
-        }
-
-        Section("Values")
-        Text("Tick what to show, use the arrows to change the order.", color = DIM, fontSize = 13.sp)
-        order.forEachIndexed { i, key ->
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                Checkbox(
-                    checked = key in enabled,
-                    onCheckedChange = { on -> enabled = if (on) enabled + key else enabled - key },
-                )
-                Text(key.classicLabel.replace("Price", "Price ($currency)"), color = TEXT, modifier = Modifier.weight(1f))
-                TextButton(onClick = { order = order.swap(i, i - 1) }, enabled = i > 0) { Text("↑", fontSize = 18.sp) }
-                TextButton(onClick = { order = order.swap(i, i + 1) }, enabled = i < order.lastIndex) { Text("↓", fontSize = 18.sp) }
-            }
-        }
-
-        Section("Currency")
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            CURRENCIES.forEach { c -> FilterChip(selected = currency == c, onClick = { currency = c }, label = { Text(c) }) }
-        }
-
-        Section("Fee order")
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FilterChip(selected = !highToLow, onClick = { highToLow = false }, label = { Text("Low → high") })
-            FilterChip(selected = highToLow, onClick = { highToLow = true }, label = { Text("High → low") })
-        }
-
-        Spacer(Modifier.height(28.dp))
-        Button(
-            onClick = {
-                scope.launch {
-                    onSave(WidgetConfig(showBlock, order.filter { it in enabled }, currency, highToLow, theme))
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp, vertical = 4.dp),
+        ) {
+            Section("Theme")
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Theme.entries.forEach { t ->
+                    FilterChip(selected = theme == t, onClick = { theme = t }, label = { Text(t.name.lowercase().replaceFirstChar(Char::uppercase)) })
                 }
-            },
-            modifier = Modifier.fillMaxWidth(),
-        ) { Text("Save", fontWeight = FontWeight.Bold) }
+            }
+
+            Section("Block height")
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Show block height", color = TEXT, modifier = Modifier.weight(1f))
+                Switch(checked = showBlock, onCheckedChange = { showBlock = it })
+            }
+
+            Section("Values")
+            Text("Tick what to show, use the arrows to change the order.", color = DIM, fontSize = 13.sp)
+            order.forEachIndexed { i, key ->
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Checkbox(
+                        checked = key in enabled,
+                        onCheckedChange = { on -> enabled = if (on) enabled + key else enabled - key },
+                    )
+                    Text(key.classicLabel.replace("Price", "Price ($currency)"), color = TEXT, modifier = Modifier.weight(1f))
+                    TextButton(onClick = { order = order.swap(i, i - 1) }, enabled = i > 0) { Text("↑", fontSize = 18.sp) }
+                    TextButton(onClick = { order = order.swap(i, i + 1) }, enabled = i < order.lastIndex) { Text("↓", fontSize = 18.sp) }
+                }
+            }
+
+            Section("Currency")
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                CURRENCIES.forEach { c -> FilterChip(selected = currency == c, onClick = { currency = c }, label = { Text(c) }) }
+            }
+
+            Section("Fee order")
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(selected = !highToLow, onClick = { highToLow = false }, label = { Text("Low → high") })
+                FilterChip(selected = highToLow, onClick = { highToLow = true }, label = { Text("High → low") })
+            }
+
+            Spacer(Modifier.height(24.dp))
+        }
     }
 }
 
@@ -170,6 +175,8 @@ private fun Section(title: String) {
     Text(title.uppercase(), color = DIM, fontSize = 12.sp, fontWeight = FontWeight.Bold)
     Spacer(Modifier.height(6.dp))
 }
+
+private val DIVIDER = Color(0xFF2A2A2A)
 
 private fun <T> List<T>.swap(a: Int, b: Int): List<T> =
     if (b !in indices) this else toMutableList().also { it[a] = this[b]; it[b] = this[a] }
