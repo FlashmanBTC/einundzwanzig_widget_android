@@ -8,6 +8,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -77,11 +78,12 @@ private val WIDE_MIN_WIDTH = 230.dp
 private val WIDE_MAX_HEIGHT = 150.dp
 private val PADDING = 12.dp
 
-// Measured on a real device (Pixel launcher, 2026-09-26), rounded up: used only to decide whether
-// all mono rows fit without scrolling. If they do, the rows sit at the bottom like on iOS.
+// Mono sizes, measured on a real device (2026-09-26) and rounded up. They decide whether all rows
+// fit without scrolling: first at normal size, then compact (smaller text and spacing), else scroll.
+private class MonoSize(val block: TextUnit, val row: TextUnit, val rowPadding: Dp, val blockHeight: Dp, val rowHeight: Dp)
+private val MONO_NORMAL = MonoSize(block = 38.sp, row = 16.sp, rowPadding = 5.dp, blockHeight = 70.dp, rowHeight = 36.dp)
+private val MONO_COMPACT = MonoSize(block = 30.sp, row = 13.sp, rowPadding = 2.dp, blockHeight = 56.dp, rowHeight = 25.dp)
 private val MONO_HEADER = 38.dp   // logo + status line
-private val MONO_BLOCK = 70.dp    // "BLOCK" label + big value + spacing
-private val MONO_ROW = 36.dp      // divider + row
 private val UPDATE_LINE = 14.dp
 
 /** Everything one widget needs to draw itself. */
@@ -134,7 +136,11 @@ class EinundzwanzigWidget : GlanceAppWidget() {
             when {
                 wide -> Wide(d, cfg, update, sizeInfo)
                 cfg.theme == Theme.CLASSIC -> Classic(d, cfg, update, sizeInfo)
-                else -> Mono(d, cfg, update, sizeInfo, monoFits(cfg, size.height - PADDING * 2, update != null))
+                else -> {
+                    val h = size.height - PADDING * 2
+                    val m = listOf(MONO_NORMAL, MONO_COMPACT).firstOrNull { monoFits(cfg, h, update != null, it) }
+                    Mono(d, cfg, update, sizeInfo, m ?: MONO_COMPACT, fits = m != null)
+                }
             }
         }
     }
@@ -152,27 +158,35 @@ class EinundzwanzigWidget : GlanceAppWidget() {
         }
     }
 
-    private fun monoFits(cfg: WidgetConfig, height: androidx.compose.ui.unit.Dp, updateLine: Boolean): Boolean {
+    private fun monoFits(cfg: WidgetConfig, height: Dp, updateLine: Boolean, m: MonoSize): Boolean {
         val needed = MONO_HEADER + (if (updateLine) UPDATE_LINE else 0.dp) +
-            (if (cfg.showBlock) MONO_BLOCK else 0.dp) + MONO_ROW * cfg.rows.size
+            (if (cfg.showBlock) m.blockHeight else 0.dp) + m.rowHeight * cfg.rows.size
         return needed <= height
     }
 
     // Mono (like the iOS mono theme): logo, status, big block height, then label/value rows.
-    // If all rows fit, they sit at the bottom and the block height is centred in the free space;
-    // otherwise the rows become a scrollable list.
+    // If all rows fit (at normal or compact size), they sit at the bottom and the block height is
+    // centred in the free space; otherwise the rows become a scrollable list.
     @Composable
-    private fun Mono(d: Display, cfg: WidgetConfig, update: String?, sizeInfo: String, fits: Boolean) {
+    private fun Mono(d: Display, cfg: WidgetConfig, update: String?, sizeInfo: String, m: MonoSize, fits: Boolean) {
         if (fits) {
+            // Glance drops everything after the 10th child of a Column without a warning on screen,
+            // so header, block and rows are grouped into their own columns
             Column(modifier = GlanceModifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
-                Header(d, cfg.rows, update, 10.sp, sizeInfo)
+                Column(modifier = GlanceModifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Header(d, cfg.rows, update, 10.sp, sizeInfo)
+                }
                 Spacer(GlanceModifier.defaultWeight())
                 if (cfg.showBlock) {
-                    BlockValue(d.block, "BLOCK", 38.sp, 9.sp)
+                    Column(modifier = GlanceModifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                        BlockValue(d.block, "BLOCK", m.block, 9.sp)
+                    }
                     Spacer(GlanceModifier.defaultWeight())
                 }
-                cfg.rows.forEachIndexed { i, key ->
-                    MonoRow(d.label(key, Theme.MONO), d.row(key), 16.sp, divider = cfg.showBlock || i > 0)
+                Column(modifier = GlanceModifier.fillMaxWidth()) {
+                    cfg.rows.forEachIndexed { i, key ->
+                        MonoRow(d.label(key, Theme.MONO), d.row(key), m.row, divider = cfg.showBlock || i > 0, padding = m.rowPadding)
+                    }
                 }
             }
             return
@@ -181,12 +195,12 @@ class EinundzwanzigWidget : GlanceAppWidget() {
             Header(d, cfg.rows, update, 10.sp, sizeInfo)
             if (cfg.showBlock) {
                 Spacer(GlanceModifier.height(6.dp))
-                BlockValue(d.block, "BLOCK", 38.sp, 9.sp)
+                BlockValue(d.block, "BLOCK", m.block, 9.sp)
                 Spacer(GlanceModifier.height(6.dp))
             }
             LazyColumn(modifier = GlanceModifier.fillMaxWidth().defaultWeight()) {
                 itemsIndexed(cfg.rows) { i, key ->
-                    MonoRow(d.label(key, Theme.MONO), d.row(key), 16.sp, divider = cfg.showBlock || i > 0)
+                    MonoRow(d.label(key, Theme.MONO), d.row(key), m.row, divider = cfg.showBlock || i > 0, padding = m.rowPadding)
                 }
             }
         }
@@ -282,11 +296,11 @@ class EinundzwanzigWidget : GlanceAppWidget() {
     }
 
     @Composable
-    private fun MonoRow(label: String, item: Item, size: TextUnit, divider: Boolean) {
+    private fun MonoRow(label: String, item: Item, size: TextUnit, divider: Boolean, padding: Dp = 5.dp) {
         Column(modifier = GlanceModifier.fillMaxWidth()) {
             if (divider) Box(modifier = GlanceModifier.fillMaxWidth().height(1.dp).background(C_DIVIDER)) {}
             Row(
-                modifier = GlanceModifier.fillMaxWidth().padding(vertical = 5.dp),
+                modifier = GlanceModifier.fillMaxWidth().padding(vertical = padding),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(label, maxLines = 1, style = TextStyle(color = ColorProvider(C_LABEL), fontSize = 9.sp, fontWeight = FontWeight.Bold))
