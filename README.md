@@ -4,6 +4,8 @@ Android home screen widget showing live Bitcoin data: block height, mempool fees
 
 Android counterpart of the [Einundzwanzig iOS widget](https://github.com/FlashmanBTC/einundzwanzig_widget) (Scriptable). Same data sources, fallbacks and themes, built as a small native app with Jetpack Glance.
 
+<img src="images/theme_mono.jpg" alt="Mono theme" width="300"> <img src="images/theme_classic.jpg" alt="Classic theme" width="300">
+
 ## Features
 
 - **Block height, fees, Moscow Time, price, supply, hashrate, difficulty adjustment**
