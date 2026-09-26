@@ -12,16 +12,29 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
+      # Until the signing secrets exist, releases are built and uploaded by hand
+      - name: Check for signing key
+        id: key
+        env:
+          KEY: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEY" ]; then echo "ok=true" >> "$GITHUB_OUTPUT"
+          else echo "::notice::No RELEASE_KEYSTORE_BASE64 secret - skipping the automatic release"; fi
+
       - uses: actions/checkout@v7
+        if: steps.key.outputs.ok == 'true'
 
       - uses: actions/setup-java@v6
+        if: steps.key.outputs.ok == 'true'
         with:
           distribution: temurin
           java-version: 21
 
       - uses: gradle/actions/setup-gradle@v6
+        if: steps.key.outputs.ok == 'true'
 
       - name: Check tag matches versionName
+        if: steps.key.outputs.ok == 'true'
         run: |
           tag="${GITHUB_REF_NAME#v}"
           version=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)
@@ -31,21 +44,25 @@ jobs:
           fi
 
       - name: Restore release key
+        if: steps.key.outputs.ok == 'true'
         run: echo "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/release.jks"
 
       - name: Tests and signed release APK
+        if: steps.key.outputs.ok == 'true'
         env:
           RELEASE_STORE_FILE: ${{ runner.temp }}/release.jks
           RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
         run: ./gradlew testDebugUnitTest assembleRelease
 
       - name: Verify signature
+        if: steps.key.outputs.ok == 'true'
         run: |
           apk=app/build/outputs/apk/release/app-release.apk
           "$ANDROID_HOME"/build-tools/*/apksigner verify --print-certs "$apk" | head -3
           cp "$apk" "einundzwanzig-widget-${GITHUB_REF_NAME}.apk"
 
       - name: Create GitHub release
+        if: steps.key.outputs.ok == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -55,5 +72,5 @@ jobs:
             --title "$GITHUB_REF_NAME" --generate-notes $flags
 
       - name: Remove release key
-        if: always()
+        if: always() && steps.key.outputs.ok == 'true'
         run: rm -f "$RUNNER_TEMP/release.jks"
