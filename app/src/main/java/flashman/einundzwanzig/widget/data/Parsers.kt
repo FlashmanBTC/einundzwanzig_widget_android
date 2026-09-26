@@ -1,5 +1,6 @@
 package flashman.einundzwanzig.widget.data
 
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -17,6 +18,9 @@ const val MAX_PRICE_AGE_SEC = 60 * 60L
 /** A height this far below the last one seen comes from a lagging node. */
 const val MAX_HEIGHT_DROP = 2
 
+/** Currencies offered in the settings - both price sources deliver all of them. */
+val CURRENCIES = listOf("EUR", "USD", "CHF", "GBP", "CAD", "AUD", "JPY")
+
 // Pure parsing and formatting - no Android dependencies, covered by unit tests.
 // Each parser returns null when the response is broken, incomplete or stale,
 // which makes fetchFirst() move on to the next source.
@@ -29,6 +33,7 @@ object Parsers {
         return h
     }
 
+    @Serializable
     data class Fees(val fast: Long, val halfHour: Long, val hour: Long)
 
     /** mempool.space { fastestFee, halfHourFee, hourFee } or blockstream.info { "1": rate, "3": rate, "6": rate } */
@@ -43,17 +48,20 @@ object Parsers {
     }
 
     /**
-     * Price in [currency] from mempool { EUR: 95000, time: ... } or blockchain.info { EUR: { last: 95000 } }.
+     * Prices in all [CURRENCIES] from mempool { EUR: 95000, time: ... } or blockchain.info { EUR: { last: 95000 } }.
      * With [nowSec] set, a mempool response older than MAX_PRICE_AGE_SEC is rejected.
+     * Null if no supported currency is present.
      */
-    fun price(body: String, currency: String, nowSec: Long? = null): Double? {
+    fun prices(body: String, nowSec: Long? = null): Map<String, Double>? {
         val o = Json.parseToJsonElement(body).jsonObject
-        val entry = o[currency] ?: return null
-        val price = if (entry is JsonPrimitive) entry.doubleOrNull else entry.jsonObject.num("last")
-        if (price == null || price <= 0) return null
         val time = o["time"]?.jsonPrimitive?.longOrNull
         if (nowSec != null && time != null && nowSec - time >= MAX_PRICE_AGE_SEC) return null
-        return price
+        val map = CURRENCIES.mapNotNull { c ->
+            val entry = o[c] ?: return@mapNotNull null
+            val price = if (entry is JsonPrimitive) entry.doubleOrNull else (entry as? JsonObject)?.num("last")
+            if (price != null && price > 0) c to price else null
+        }.toMap()
+        return map.ifEmpty { null }
     }
 
     /** Most recent average hashrate in H/s from /mining/hashrate/1m. */
@@ -62,6 +70,7 @@ object Parsers {
         return arr.lastOrNull()?.jsonObject?.num("avgHashrate")
     }
 
+    @Serializable
     data class Difficulty(val changePercent: Double, val remainingBlocks: Long)
 
     fun difficulty(body: String): Difficulty? {

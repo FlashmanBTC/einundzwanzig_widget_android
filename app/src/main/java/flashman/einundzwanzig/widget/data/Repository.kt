@@ -8,9 +8,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.map
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
@@ -19,55 +17,47 @@ const val CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000L
 
 val Context.store by preferencesDataStore(name = "einundzwanzig")
 
-// Phase 4 turns these into user settings
-object Settings {
-    const val currency = "EUR"
-    const val feesHighToLow = false
-}
+/** Lenient: an app update may add fields, old stored JSON must still load. */
+val json = Json { ignoreUnknownKeys = true }
 
 enum class State { OK, CACHED, FAIL }
 
+/** One data source's value; [at] is when it was fetched (older than the snapshot if cached). */
 @Serializable
-data class Item(val text: String, val state: State)
+data class Sourced<T>(val value: T? = null, val state: State = State.FAIL, val at: Long = 0)
 
-/** Everything the widget shows, ready to render. */
+/**
+ * Raw values of all sources. Formatting happens per widget, because every widget
+ * has its own currency, fee order and rows (see WidgetConfig).
+ */
 @Serializable
 data class Snapshot(
     val updatedAt: Long,
-    val currency: String,
-    val height: Item,
-    val fees: Item,
-    val moscow: Item,
-    val price: Item,
-    val supply: Item,
-    val hashrate: Item,
-    val difficulty: Item,
-    /** Age of the oldest cached value on display, null if everything is fresh. */
-    val oldestCacheAt: Long?,
-) {
-    val items get() = listOf(height, fees, moscow, price, supply, hashrate, difficulty)
-}
+    val height: Sourced<Long> = Sourced(),
+    val fees: Sourced<Parsers.Fees> = Sourced(),
+    val prices: Sourced<Map<String, Double>> = Sourced(),
+    val hashrate: Sourced<Double> = Sourced(),
+    val difficulty: Sourced<Parsers.Difficulty> = Sourced(),
+)
 
-private val SNAPSHOT = stringPreferencesKey("snapshot")
+private val SNAPSHOT = stringPreferencesKey("snapshot_v2")
 
 object Repository {
 
-    /** Latest snapshot as it changes; null before the first refresh. */
-    fun snapshots(context: Context): Flow<Snapshot?> =
-        context.store.data.map { prefs -> prefs[SNAPSHOT]?.let { runCatching { Json.decodeFromString<Snapshot>(it) }.getOrNull() } }
+    fun snapshot(prefs: Preferences): Snapshot? =
+        prefs[SNAPSHOT]?.let { runCatching { json.decodeFromString<Snapshot>(it) }.getOrNull() }
 
     /** Fetches everything in parallel, falls back to cached values, stores and returns the new snapshot. */
     suspend fun refresh(context: Context, get: suspend (String) -> String? = Http::get): Snapshot {
         val prefs = context.store.data.first()
         val now = System.currentTimeMillis()
-        val currency = Settings.currency
         val lastHeight = prefs.raw("height")?.let { Parsers.height(it) }
 
         // Each source returns its raw body once accepted, so the body itself can be cached
         val fresh = coroutineScope {
             val height = async { fetchFirst(Sources.height, get) { b -> b.takeIf { Parsers.height(it, lastHeight) != null } } }
             val fees = async { fetchFirst(Sources.fees, get) { b -> b.takeIf { Parsers.fees(it) != null } } }
-            val price = async { fetchFirst(Sources.price, get) { b -> b.takeIf { Parsers.price(it, currency, now / 1000) != null } } }
+            val price = async { fetchFirst(Sources.price, get) { b -> b.takeIf { Parsers.prices(it, now / 1000) != null } } }
             val hash = async { fetchFirst(Sources.hashrate, get) { b -> b.takeIf { Parsers.hashrate(it) != null } } }
             val diff = async { fetchFirst(Sources.difficulty, get) { b -> b.takeIf { Parsers.difficulty(it) != null } } }
             mapOf(
@@ -77,35 +67,23 @@ object Repository {
         }
 
         // Fresh body -> OK; otherwise the cached body if it is not too old -> CACHED; else FAIL
-        val resolved = fresh.mapValues { (key, body) ->
-            when {
-                body != null -> Resolved(body, State.OK, now)
-                prefs.raw(key) != null && now - prefs.ts(key) < CACHE_MAX_AGE_MS ->
-                    Resolved(prefs.raw(key)!!, State.CACHED, prefs.ts(key))
-                else -> Resolved(null, State.FAIL, 0)
+        fun <T> resolve(key: String, parse: (String) -> T?): Sourced<T> {
+            fresh[key]?.let { body -> return Sourced(parse(body), State.OK, now) }
+            val cached = prefs.raw(key)
+            val at = prefs.ts(key)
+            if (cached != null && now - at < CACHE_MAX_AGE_MS) {
+                parse(cached)?.let { return Sourced(it, State.CACHED, at) }
             }
+            return Sourced()
         }
-
-        val h = resolved.getValue("height")
-        val f = resolved.getValue("fees")
-        val p = resolved.getValue("price")
-        val hr = resolved.getValue("hashrate")
-        val d = resolved.getValue("difficulty")
-
-        val heightValue = h.body?.let { Parsers.height(it) }
-        val priceValue = p.body?.let { Parsers.price(it, currency) }
 
         val snapshot = Snapshot(
             updatedAt = now,
-            currency = currency,
-            height = item(h, heightValue?.let(Format::height)),
-            fees = item(f, f.body?.let(Parsers::fees)?.let { Format.fees(it, Settings.feesHighToLow) }),
-            moscow = item(p, priceValue?.let(Format::moscowTime)),
-            price = item(p, priceValue?.let(Format::price)),
-            supply = item(h, heightValue?.let(Format::supply)),
-            hashrate = item(hr, hr.body?.let(Parsers::hashrate)?.let(Format::hashrate)),
-            difficulty = item(d, d.body?.let(Parsers::difficulty)?.let(Format::difficulty)),
-            oldestCacheAt = resolved.values.filter { it.state == State.CACHED }.minOfOrNull { it.at },
+            height = resolve("height") { Parsers.height(it) },
+            fees = resolve("fees", Parsers::fees),
+            prices = resolve("price") { Parsers.prices(it) },
+            hashrate = resolve("hashrate", Parsers::hashrate),
+            difficulty = resolve("difficulty", Parsers::difficulty),
         )
 
         context.store.edit { e ->
@@ -115,15 +93,12 @@ object Repository {
                     e[longPreferencesKey("ts_$key")] = now
                 }
             }
-            e[SNAPSHOT] = Json.encodeToString(Snapshot.serializer(), snapshot)
+            e[SNAPSHOT] = json.encodeToString(Snapshot.serializer(), snapshot)
+            // Replaced by snapshot_v2 in 0.4.0
+            e.remove(stringPreferencesKey("snapshot"))
         }
         return snapshot
     }
-
-    private class Resolved(val body: String?, val state: State, val at: Long)
-
-    private fun item(r: Resolved, text: String?) =
-        if (text == null) Item("⚠️ n/a", State.FAIL) else Item(text, r.state)
 
     private fun Preferences.raw(key: String) = this[stringPreferencesKey("raw_$key")]
     private fun Preferences.ts(key: String) = this[longPreferencesKey("ts_$key")] ?: 0L
