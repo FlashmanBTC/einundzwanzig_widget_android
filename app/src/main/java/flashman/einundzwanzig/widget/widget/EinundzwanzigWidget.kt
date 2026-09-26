@@ -2,6 +2,8 @@ package flashman.einundzwanzig.widget.widget
 
 import android.content.Context
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -45,8 +47,13 @@ val C_ERROR = Color(0xFF555555)
 class EinundzwanzigWidget : GlanceAppWidget() {
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        val snapshot = Repository.snapshot(context)
-        provideContent { Content(snapshot) }
+        // Observe the store: a Glance session outlives a single update, so reading the
+        // snapshot once here would keep showing whatever was stored when the session started
+        val snapshots = Repository.snapshots(context)
+        provideContent {
+            val snapshot by snapshots.collectAsState(initial = null)
+            Content(snapshot)
+        }
     }
 
     // Phase 2: plain list of all values; the mono/classic layouts per size follow in phases 3 and 4
@@ -63,7 +70,7 @@ class EinundzwanzigWidget : GlanceAppWidget() {
             Text("₿ Einundzwanzig", style = TextStyle(color = ColorProvider(C_ACCENT), fontSize = 16.sp, fontWeight = FontWeight.Bold))
             if (s == null) {
                 Spacer(GlanceModifier.height(8.dp))
-                Text("Loading…", style = TextStyle(color = ColorProvider(C_DIM), fontSize = 12.sp))
+                Text("Loading… (tap to retry)", style = TextStyle(color = ColorProvider(C_DIM), fontSize = 12.sp))
                 return@Column
             }
             Text(statusText(s), style = TextStyle(color = ColorProvider(C_DIM), fontSize = 10.sp))

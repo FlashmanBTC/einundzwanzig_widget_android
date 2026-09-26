@@ -8,7 +8,9 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
@@ -50,9 +52,9 @@ private val SNAPSHOT = stringPreferencesKey("snapshot")
 
 object Repository {
 
-    /** Last snapshot, or null before the first refresh. */
-    suspend fun snapshot(context: Context): Snapshot? =
-        context.store.data.first()[SNAPSHOT]?.let { runCatching { Json.decodeFromString<Snapshot>(it) }.getOrNull() }
+    /** Latest snapshot as it changes; null before the first refresh. */
+    fun snapshots(context: Context): Flow<Snapshot?> =
+        context.store.data.map { prefs -> prefs[SNAPSHOT]?.let { runCatching { Json.decodeFromString<Snapshot>(it) }.getOrNull() } }
 
     /** Fetches everything in parallel, falls back to cached values, stores and returns the new snapshot. */
     suspend fun refresh(context: Context, get: suspend (String) -> String? = Http::get): Snapshot {

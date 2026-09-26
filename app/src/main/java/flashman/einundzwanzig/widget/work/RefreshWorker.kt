@@ -1,6 +1,7 @@
 package flashman.einundzwanzig.widget.work
 
 import android.content.Context
+import android.util.Log
 import androidx.glance.appwidget.updateAll
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
@@ -19,12 +20,15 @@ import java.util.concurrent.TimeUnit
 class RefreshWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
-        Repository.refresh(applicationContext)
+        val ok = runCatching { Repository.refresh(applicationContext) }
+            .onFailure { Log.e(TAG, "refresh failed", it) }
+            .isSuccess
         EinundzwanzigWidget().updateAll(applicationContext)
-        return Result.success()
+        return if (ok) Result.success() else Result.retry()
     }
 
     companion object {
+        private const val TAG = "RefreshWorker"
         private const val PERIODIC = "refresh-periodic"
         private const val NOW = "refresh-now"
 
